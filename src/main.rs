@@ -29,12 +29,14 @@ impl Request {
         let mut headers: HashMap<String, String> = HashMap::new();
 
         for line in &request_lines[1..] {
-            if *line != "\r\n" {
-                let parts = line.split(": ").collect_vec();
-                let key = String::from(*parts.get(0).unwrap());
-                let value = String::from(*parts.get(1).unwrap());
+            let parts = line.split(": ").collect_vec();
+            let key = parts.get(0);
+            let value = parts.get(1);
 
-                headers.insert(key, value);
+            if let Some(key) = key {
+                if let Some(value) = value {
+                    headers.insert(String::from(*key), String::from(*value));
+                }
             }
         }
 
