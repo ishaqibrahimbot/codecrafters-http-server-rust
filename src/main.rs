@@ -1,7 +1,8 @@
 use std::{
     collections::HashMap,
     io::{Read, Write},
-    net::TcpListener,
+    net::{TcpListener, TcpStream},
+    thread,
 };
 
 use itertools::Itertools;
@@ -95,58 +96,57 @@ impl Response {
     }
 }
 
-fn main() {
-    // You can use print statements as follows for debugging, they'll be visible when running tests.
-    println!("Logs from your program will appear here!");
+fn handle_connection(mut stream: TcpStream) {
+    let mut buffer = [0; 256];
+    let _num_incoming_bytes = stream.read(&mut buffer);
+    let incoming_data = String::from_utf8(Vec::from(buffer)).unwrap();
 
+    let request = Request::parse_from(incoming_data);
+
+    let mut response_headers: HashMap<String, String> = HashMap::new();
+
+    if request.path == "/" {
+        let response = Response::new(Status::TwoHundred, None, response_headers);
+        let _ = stream.write(response.format().as_bytes());
+    } else if request.path.starts_with("/echo") {
+        let random_string = request.path.split("/echo/").last().unwrap();
+        response_headers.insert("Content-Type".to_string(), "text/plain".to_string());
+        response_headers.insert(
+            "Content-Length".to_string(),
+            random_string.len().to_string(),
+        );
+        let response = Response::new(
+            Status::TwoHundred,
+            Some(String::from(random_string)),
+            response_headers,
+        );
+
+        let _ = stream.write(response.format().as_bytes());
+    } else if request.path.starts_with("/user-agent") {
+        let user_agent = request.headers.get("User-Agent").unwrap();
+        response_headers.insert("Content-Type".to_string(), "text/plain".to_string());
+        response_headers.insert("Content-Length".to_string(), user_agent.len().to_string());
+
+        let response = Response::new(
+            Status::TwoHundred,
+            Some(user_agent.clone()),
+            response_headers,
+        );
+
+        let _ = stream.write(response.format().as_bytes());
+    } else {
+        let response = Response::new(Status::FourZeroFour, None, response_headers);
+        let _ = stream.write(response.format().as_bytes());
+    }
+}
+
+fn main() {
     let listener = TcpListener::bind("127.0.0.1:4221").unwrap();
 
     for stream in listener.incoming() {
         match stream {
-            Ok(mut _stream) => {
-                println!("accepted new connection");
-                let mut buffer = [0; 120];
-                let _num_incoming_bytes = _stream.read(&mut buffer);
-                let incoming_data = String::from_utf8(Vec::from(buffer)).unwrap();
-
-                let request = Request::parse_from(incoming_data);
-
-                let mut response_headers: HashMap<String, String> = HashMap::new();
-
-                if request.path == "/" {
-                    let response = Response::new(Status::TwoHundred, None, response_headers);
-                    let _ = _stream.write(response.format().as_bytes());
-                } else if request.path.starts_with("/echo") {
-                    let random_string = request.path.split("/echo/").last().unwrap();
-                    response_headers.insert("Content-Type".to_string(), "text/plain".to_string());
-                    response_headers.insert(
-                        "Content-Length".to_string(),
-                        random_string.len().to_string(),
-                    );
-                    let response = Response::new(
-                        Status::TwoHundred,
-                        Some(String::from(random_string)),
-                        response_headers,
-                    );
-
-                    let _ = _stream.write(response.format().as_bytes());
-                } else if request.path.starts_with("/user-agent") {
-                    let user_agent = request.headers.get("User-Agent").unwrap();
-                    response_headers.insert("Content-Type".to_string(), "text/plain".to_string());
-                    response_headers
-                        .insert("Content-Length".to_string(), user_agent.len().to_string());
-
-                    let response = Response::new(
-                        Status::TwoHundred,
-                        Some(user_agent.clone()),
-                        response_headers,
-                    );
-
-                    let _ = _stream.write(response.format().as_bytes());
-                } else {
-                    let response = Response::new(Status::FourZeroFour, None, response_headers);
-                    let _ = _stream.write(response.format().as_bytes());
-                }
+            Ok(stream) => {
+                thread::spawn(move || handle_connection(stream));
             }
             Err(e) => {
                 println!("error: {}", e);
