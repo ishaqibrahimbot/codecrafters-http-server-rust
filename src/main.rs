@@ -14,12 +14,14 @@ use itertools::Itertools;
 enum Status {
     TwoHundred,
     FourZeroFour,
+    TwoHundredAndOne,
 }
 
 struct Request {
     method: String,
     path: String,
     headers: HashMap<String, String>,
+    body: Option<String>,
 }
 
 impl Request {
@@ -41,13 +43,25 @@ impl Request {
                 if let Some(value) = value {
                     headers.insert(String::from(*key), String::from(*value));
                 }
+            } else {
+                break;
             }
+        }
+
+        // check for a body
+        let request_parts = raw_data.split("\r\n\r\n").collect_vec();
+
+        let mut body: Option<String> = None;
+
+        if let Some(body_str) = request_parts.get(1) {
+            body = Some(String::from(body_str.to_owned()));
         }
 
         Request {
             method,
             path,
             headers,
+            body,
         }
     }
 }
@@ -71,7 +85,14 @@ impl Response {
         if self.status == Status::FourZeroFour {
             return String::from("HTTP/1.1 404 NOT FOUND\r\n\r\n");
         } else {
-            let mut response = String::from("HTTP/1.1 200 OK\r\n");
+            let mut response: String;
+
+            if self.status == Status::TwoHundred {
+                response = String::from("HTTP/1.1 200 OK\r\n");
+            } else {
+                response = String::from("HTTP/1.1 201 OK\r\n")
+            }
+
             if self.headers.len() > 0 {
                 let headers_string = self
                     .headers
@@ -88,19 +109,13 @@ impl Response {
                 response = response + "\r\n" + &body_text.clone() + "\r\n";
             }
 
-            response = response + "\r\n";
-
-            response
+            response + "\r\n"
         }
-    }
-
-    fn add_header(&mut self, key: String, value: String) {
-        self.headers.insert(key, value);
     }
 }
 
 fn handle_connection(mut stream: TcpStream) {
-    let mut buffer = [0; 256];
+    let mut buffer = [0; 1024];
     let _num_incoming_bytes = stream.read(&mut buffer);
     let incoming_data = String::from_utf8(Vec::from(buffer)).unwrap();
 
@@ -155,26 +170,44 @@ fn handle_connection(mut stream: TcpStream) {
             full_path.push(directory);
             full_path.push(filename);
 
-            if full_path.exists() {
-                // read the file and copy its contents into a buffer
+            if request.method == "GET" {
+                if full_path.exists() {
+                    // read the file and copy its contents into a buffer
 
-                let mut file = File::open(full_path).unwrap();
-                let mut buffer = String::new();
-                file.read_to_string(&mut buffer);
+                    let mut file = File::open(full_path).unwrap();
+                    let mut buffer = String::new();
+                    file.read_to_string(&mut buffer);
 
-                response_headers.insert(
-                    "Content-Type".to_string(),
-                    "application/octet-stream".to_string(),
-                );
+                    response_headers.insert(
+                        "Content-Type".to_string(),
+                        "application/octet-stream".to_string(),
+                    );
 
-                response_headers.insert("Content-Length".to_string(), buffer.len().to_string());
+                    response_headers.insert("Content-Length".to_string(), buffer.len().to_string());
 
-                let response = Response::new(Status::TwoHundred, Some(buffer), response_headers);
-                stream.write(response.format().as_bytes());
+                    let response =
+                        Response::new(Status::TwoHundred, Some(buffer), response_headers);
+                    stream.write(response.format().as_bytes());
+                } else {
+                    // return 404
+                    let response = Response::new(Status::FourZeroFour, None, response_headers);
+                    stream.write(response.format().as_bytes());
+                }
             } else {
-                // return 404
-                let response = Response::new(Status::FourZeroFour, None, response_headers);
-                stream.write(response.format().as_bytes());
+                // body
+                let body = request.body;
+
+                if let Some(body) = body {
+                    let mut file = File::create(full_path).unwrap();
+
+                    file.write_all(body.as_bytes());
+
+                    stream.write(
+                        Response::new(Status::TwoHundredAndOne, None, response_headers)
+                            .format()
+                            .as_bytes(),
+                    );
+                }
             }
         }
     } else {
