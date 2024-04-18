@@ -1,7 +1,10 @@
 use std::{
     collections::HashMap,
+    env,
+    fs::File,
     io::{Read, Write},
     net::{TcpListener, TcpStream},
+    path::{Path, PathBuf},
     thread,
 };
 
@@ -134,6 +137,44 @@ fn handle_connection(mut stream: TcpStream) {
         );
 
         let _ = stream.write(response.format().as_bytes());
+    } else if request.path.starts_with("/files/") {
+        let filename = request
+            .path
+            .split("/files/")
+            .collect_vec()
+            .get(1)
+            .unwrap()
+            .to_owned();
+
+        let args = env::args().collect_vec();
+
+        let directory = args.get(2);
+
+        if let Some(directory) = directory {
+            let mut full_path = PathBuf::new();
+            full_path.push(directory);
+            full_path.push(filename);
+
+            if full_path.exists() {
+                // read the file and copy its contents into a buffer
+
+                let mut file = File::open(full_path).unwrap();
+                let mut buffer = String::new();
+                file.read_to_string(&mut buffer);
+
+                response_headers.insert(
+                    "Content-Type".to_string(),
+                    "application/octet-stream".to_string(),
+                );
+
+                let response = Response::new(Status::TwoHundred, Some(buffer), response_headers);
+                stream.write(response.format().as_bytes());
+            } else {
+                // return 404
+                let response = Response::new(Status::FourZeroFour, None, response_headers);
+                stream.write(response.format().as_bytes());
+            }
+        }
     } else {
         let response = Response::new(Status::FourZeroFour, None, response_headers);
         let _ = stream.write(response.format().as_bytes());
