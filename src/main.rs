@@ -167,6 +167,8 @@ fn handle_connection(mut stream: TcpStream) {
                     "application/octet-stream".to_string(),
                 );
 
+                response_headers.insert("Content-Length".to_string(), buffer.len().to_string());
+
                 let response = Response::new(Status::TwoHundred, Some(buffer), response_headers);
                 stream.write(response.format().as_bytes());
             } else {
