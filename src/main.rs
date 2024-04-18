@@ -48,7 +48,6 @@ impl Request {
             }
         }
 
-        // check for a body
         let request_parts = raw_data.split("\r\n\r\n").collect_vec();
 
         let mut body: Option<String> = None;
@@ -116,8 +115,8 @@ impl Response {
 
 fn handle_connection(mut stream: TcpStream) {
     let mut buffer = [0; 1024];
-    let _num_incoming_bytes = stream.read(&mut buffer);
-    let incoming_data = String::from_utf8(Vec::from(buffer)).unwrap();
+    let _num_incoming_bytes = stream.read(&mut buffer).unwrap();
+    let incoming_data = String::from_utf8(Vec::from(&buffer[0.._num_incoming_bytes])).unwrap();
 
     let request = Request::parse_from(incoming_data);
 
